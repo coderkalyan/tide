@@ -59,8 +59,61 @@ pub const Signal = struct {
     /// Interned name of the signal, not including parent scope names. To resolve the name
     /// as a string, call the `name` function and pass the string pool.
     name_ref: StringPool.Ref,
+    /// Width of the signal, in bits.
+    width: u32,
+
+    pub const Ref = enum(u32) { _ };
 
     pub fn name(self: *const Signal, pool: *const StringPool) []const u8 {
         return pool.get(self.name_ref);
     }
+};
+
+pub const Scope = struct {
+    /// Interned name of the scope, not including parent scope names. To resolve the name
+    /// as a string, call the `name` function and pass the string pool.
+    name_ref: StringPool.Ref,
+    /// Scope kind (signal, module, function, etc).
+    tag: Tag,
+    /// Tag specific payload. Examples include child scopes or signal data.
+    payload: Payload,
+
+    pub const Tag = enum(u8) {
+        variable,
+        verilog_begin,
+        verilog_fork,
+        verilog_function,
+        verilog_module,
+        verilog_task,
+    };
+
+    pub const Payload = union {
+        /// Reference to an array of child scopes.
+        child_refs: ChildRefs,
+        /// Reference to the signal underlying a variable.
+        variable: Signal.Ref,
+
+        pub const ChildRefs = struct {
+            /// Index into Hierarchy.children where the child refs
+            /// for this scope start.
+            start: u32,
+            /// Index into Hierarchy.children where the child refs
+            /// for this scope end (exclusive).
+            end: u32,
+        };
+    };
+
+    pub const Ref = enum(u32) { _ };
+
+    pub fn name(self: *const Signal, pool: *const StringPool) []const u8 {
+        return pool.get(self.name_ref);
+    }
+};
+
+pub const Hierarchy = struct {
+    /// Flat list of nodes in the hierarchy. The hierarchy forms a tree
+    /// where leaf nodes are variables and internal nodes are nested scopes.
+    scopes: []const Scope,
+    /// List of edges in the hierarchy tree.
+    children: []const Scope.Ref,
 };
