@@ -6,12 +6,15 @@ pub const Timestamp = u64;
 /// efficient searching through pages without loading the entire page
 /// from disk into memory.
 pub const PageIndex = extern struct {
+    /// Unique identifier for this page. Used to locate the page on disk
+    /// and build index structures.
+    ref: Ref,
     /// Earliest event time captured in this page (inclusive).
     start_time: u64,
     /// Latest event time captured in this page (inclusive).
     end_time: u64,
-    /// Number of events in this page.
-    len: u32,
+
+    pub const Ref = enum(u64) { _ };
 };
 
 /// A page represents a window of change events for a single
@@ -24,42 +27,36 @@ pub const PageIndex = extern struct {
 /// cache. The on-disk representation is nearly identical to the
 /// page, except for some extra metadata. The on-disk format is
 /// compressed with LZ4.
-pub const Page = extern struct {
-    /// Unique identifier for this page. Used to locate the page on disk
-    /// and build index structures.
-    ref: Ref,
-    /// Number of events stored in this page. This should be equal to the
-    /// `len` field in the corresponding `PageIndex`.
-    len: u32,
-    /// Width of each value stored in this page, in bits. This should be
-    /// equal to the `width` field in the corresponding `Signal`.
-    width: u32,
-    /// Pointer to the underlying buffer that stores the page data.
-    /// This can be extracted
-    payload: *align(page_align) const [page_size_bytes]u8,
+pub fn Page(comptime Word: type) type {
+    return struct {
+        /// Unique identifier for this page. Used to locate the page on disk
+        /// and build index structures.
+        ref: PageIndex.Ref,
+        /// Pointer to the underlying buffer that stores the page data.
+        /// This is not allocated inline so all pages can instead be allocated
+        /// out of a single large memory-mapped region. The page struct itself
+        /// is extremely lightweight and can be passed around by value.
+        payload: *align(page_align) const [page_size_bytes]u8,
 
-    const page_size_bytes = 16 * 1024; //< 16KiB footprint per page.
-    const page_align = 64; //< Cache line aligned pages.
+        const element_count = 1024; //< 1024 elements per page.
+        const page_align = 64; //< Cache line aligned pages.
+        const page_size_bytes = element_count * (@sizeOf(Timestamp) + @sizeOf(Word));
 
-    comptime {
-        // Pages should be aligned to timestamp alignment at the least.
-        std.debug.assert(page_align >= @alignOf(Timestamp));
-        // An even number of timestamps should fit in a page.
-        std.debug.assert(page_size_bytes % @sizeOf(u64) == 0);
-    }
+        comptime {
+            // Pages should be aligned to timestamp alignment at the least.
+            std.debug.assert(page_align >= @alignOf(Timestamp));
+            // An even number of timestamps should fit in a page.
+            std.debug.assert(page_size_bytes % @sizeOf(u64) == 0);
+        }
 
-    pub const Ref = enum(u64) { _ };
+        pub fn timestamps(page: Page) *const [element_count]Timestamp {
+            const ptr: [*]const Timestamp = @ptrCast(page.payload);
+            return ptr[0..element_count];
+        }
 
-    pub fn timestamps(page: *const Page) []const Timestamp {
-        const ptr: [*]const Timestamp = @ptrCast(page.payload);
-        const slice = ptr[0..page.len];
-
-        const payload <= 0;
-        std.debug.assert(&slice[slice.len - 1])
-    }
-
-    pub fn values(page: *const Page) []const u8 {
-        const ptr: [*]const u8 = page.payload + (@sizeOf(Timestamp) * page.len);
-        return ptr[0..page.len];
-    }
-};
+        pub fn values(page: Page) *const [element_count]Word {
+            const ptr: [*]const u8 = page.payload + element_count * @sizeOf(Timestamp);
+            return ptr[0..element_count];
+        }
+    };
+}
