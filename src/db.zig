@@ -52,6 +52,7 @@ pub const Database = struct {
     }
 
     /// Insert a new (immutable) signal into the database.
+    /// TODO: Implement better input validation.
     pub fn insert(db: *Database, signal: Signal) !void {
         // Sanity check basic signal invariants. It is prohibitively expensive to
         // check all invariants, especially that timestamps are sorted and unique.
@@ -91,7 +92,7 @@ pub const Database = struct {
         // Currently, derived signals are not supported.
         std.debug.assert(signal.shape == .array);
 
-        // Calculate the exclusive range of samples to return.
+        // Calculate the range (upper exclusive) of samples to return.
         const timestamps = signal.payload.timestamps;
         const lo = upperBound(timestamps, start) - 1;
         const hi = upperBound(timestamps, end);
@@ -297,5 +298,78 @@ test "query signal" {
         &.{70},
         &.{0x8f},
         &.{0x00},
+    );
+}
+
+test "query ids" {
+    const gpa = std.testing.allocator;
+    var db: Database = .init(gpa);
+    defer db.deinit();
+
+    // Query a nonexistant signal.
+    try testing.expectEqual(null, db.query(@enumFromInt(100), 0, 100));
+
+    // Insert a few signals into the database.
+    const alpha: Id = @enumFromInt(100);
+    const bravo: Id = @enumFromInt(200);
+    const charlie: Id = @enumFromInt(300);
+    try db.insert(.{
+        .id = alpha,
+        .type = .{ .kind = .quaternary, .width = 8 },
+        .shape = .array,
+        .len = 5,
+        .payload = .{
+            .timestamps = &.{ 0, 10, 30, 50, 70 },
+            .x0s = &.{ 0xff, 0x8f, 0x6d, 0x99, 0x8f },
+            .x1s = &.{ 0xff, 0x00, 0x00, 0x00, 0x00 },
+        },
+    });
+    try db.insert(.{
+        .id = bravo,
+        .type = .{ .kind = .quaternary, .width = 1 },
+        .shape = .array,
+        .len = 8,
+        .payload = .{
+            .timestamps = &.{ 0, 10, 20, 30, 40, 50, 60, 70 },
+            .x0s = &.{ 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x00, 0x01 },
+            .x1s = &.{ 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+        },
+    });
+    try db.insert(.{
+        .id = charlie,
+        .type = .{ .kind = .quaternary, .width = 32 },
+        .shape = .array,
+        .len = 1,
+        .payload = .{
+            .timestamps = &.{0},
+            .x0s = &.{ 0x8f, 0x6d, 0x99, 0x8f },
+            .x1s = &.{ 0x00, 0x00, 0x00, 0x00 },
+        },
+    });
+
+    // Query them all.
+    try testQuery(
+        db.query(alpha, 0, 70) orelse unreachable,
+        alpha,
+        5,
+        &.{ 0, 10, 30, 50, 70 },
+        &.{ 0xff, 0x8f, 0x6d, 0x99, 0x8f },
+        &.{ 0xff, 0x00, 0x00, 0x00, 0x00 },
+    );
+    try testQuery(
+        db.query(bravo, 0, 70) orelse unreachable,
+        bravo,
+        8,
+        &.{ 0, 10, 20, 30, 40, 50, 60, 70 },
+        &.{ 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x00, 0x01 },
+        &.{ 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+    );
+    try testQuery(
+        db.query(charlie, 0, 70) orelse unreachable,
+        charlie,
+        1,
+        &.{0},
+        &.{ 0x8f, 0x6d, 0x99, 0x8f },
+        &.{ 0x00, 0x00, 0x00, 0x00 },
     );
 }

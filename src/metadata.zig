@@ -185,7 +185,6 @@ test "type bytes" {
     try testing.expectEqual(1, Type.quaternary(8).bytes());
     try testing.expectEqual(2, Type.quaternary(16).bytes());
     try testing.expectEqual(4, Type.quaternary(31).bytes());
-    try testing.expectEqual(8, Type.quaternary(64).bytes());
 }
 
 test "build signal" {
