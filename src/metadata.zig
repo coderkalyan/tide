@@ -14,6 +14,15 @@ pub const Type = struct {
     };
 
     pub const Width = u32;
+
+    pub fn quaternary(width: Width) Type {
+        std.debug.assert(width > 0);
+        return .{ .kind = .quaternary, .width = width };
+    }
+
+    pub fn bytes(ty: Type) usize {
+        return (ty.width + 7) / 8;
+    }
 };
 
 /// Signals are the primitive data stored in the database. Operations on signals
@@ -109,14 +118,14 @@ pub const Builder = struct {
     /// Reserve capacity for at least `count` additional samples.
     pub fn ensureUnusedCapacity(builder: *Builder, gpa: Allocator, count: usize) !void {
         try builder.timestamps.ensureUnusedCapacity(gpa, count);
-        const bytes_per_sample = builder.type.width / 8;
+        const bytes_per_sample = builder.type.bytes();
         try builder.x0s.ensureUnusedCapacity(gpa, bytes_per_sample * count);
         try builder.x1s.ensureUnusedCapacity(gpa, bytes_per_sample * count);
     }
 
     pub fn appendSliceAssumeCapacity(builder: *Builder, timestamps: []const Timestamp, x0s: []const u8, x1s: []const u8) void {
         const count = timestamps.len;
-        const bytes_per_sample = builder.type.width / 8;
+        const bytes_per_sample = builder.type.bytes();
         std.debug.assert(x0s.len == count * bytes_per_sample);
         std.debug.assert(x1s.len == count * bytes_per_sample);
 
@@ -126,7 +135,7 @@ pub const Builder = struct {
     }
 
     pub fn appendAssumeCapacity(builder: *Builder, timestamp: Timestamp, x0: []const u8, x1: []const u8) void {
-        const bytes_per_sample = builder.type.width / 8;
+        const bytes_per_sample = builder.type.bytes();
         std.debug.assert(x0.len == bytes_per_sample);
         std.debug.assert(x1.len == bytes_per_sample);
 
@@ -144,7 +153,7 @@ pub const Builder = struct {
     pub fn build(builder: *Builder, gpa: Allocator) !Signal {
         // Sanity check lengths.
         const len = builder.timestamps.items.len;
-        const bytes_per_sample = builder.type.width / 8;
+        const bytes_per_sample = builder.type.bytes();
         std.debug.assert(builder.x0s.items.len == len * bytes_per_sample);
         std.debug.assert(builder.x1s.items.len == len * bytes_per_sample);
 
@@ -168,6 +177,16 @@ pub const Builder = struct {
         };
     }
 };
+
+test "type bytes" {
+    try testing.expectEqual(1, Type.quaternary(1).bytes());
+    try testing.expectEqual(1, Type.quaternary(2).bytes());
+    try testing.expectEqual(1, Type.quaternary(7).bytes());
+    try testing.expectEqual(1, Type.quaternary(8).bytes());
+    try testing.expectEqual(2, Type.quaternary(16).bytes());
+    try testing.expectEqual(4, Type.quaternary(31).bytes());
+    try testing.expectEqual(8, Type.quaternary(64).bytes());
+}
 
 test "build signal" {
     const gpa = std.testing.allocator;
